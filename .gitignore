@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# Jupyter
+*.nbconvert.ipynb
+
+# Model artifacts / outputs
+outputs/
+checkpoints/
+*.gguf
+*.safetensors
+*.bin
+wandb/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
