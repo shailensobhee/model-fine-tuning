@@ -17,6 +17,8 @@ notebooks/
     utils_unsloth.py                          Helper module for the vision notebook
 scripts/
   build_landing_notebook.py                   Generator for the start-here landing notebook
+  build_diagrams.py                            Generator for the notebook concept diagrams
+notebooks/unsloth/assets/                      Concept diagrams (SVG source + PNG), embedded in the landing notebook
 ```
 
 ## Start here (new students)
@@ -34,7 +36,10 @@ It is a friendly, self-contained landing notebook that:
 - and guides you through your first fine-tune inside the Studio UI.
 
 No prior deep-learning experience required. The notebook is regenerated from
-`scripts/build_landing_notebook.py` if you want to edit it in plain text.
+`scripts/build_landing_notebook.py` if you want to edit it in plain text, and
+the five concept diagrams it embeds are regenerated from
+`scripts/build_diagrams.py` (light-themed SVG source plus PNG, rendered with
+cairosvg, no external tools needed).
 
 ## Working notebook
 

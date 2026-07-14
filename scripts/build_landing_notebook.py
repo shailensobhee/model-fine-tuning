@@ -37,6 +37,17 @@ def code(*lines):
     }
 
 
+def img(name, alt, caption=None):
+    """Markdown cell embedding a diagram from assets/ by relative path.
+
+    Relative paths render in both JupyterLab and GitHub's notebook viewer.
+    """
+    lines = [f"![{alt}](assets/{name}.png)"]
+    if caption:
+        lines += ["", f"*{caption}*"]
+    return md(*lines)
+
+
 cells = []
 
 # ---------------------------------------------------------------- title
@@ -100,6 +111,12 @@ cells.append(md(
     "a giant prompt, and it lets a small model punch above its weight.",
 ))
 
+cells.append(img(
+    "01-finetuning-overview",
+    "Fine-tuning takes a pre-trained base model, adds your data, and produces a model specialized to your task",
+    "Fine-tuning: a general base model plus your data becomes a specialist.",
+))
+
 cells.append(md(
     "## The two big families of fine-tuning",
     "",
@@ -129,6 +146,12 @@ cells.append(md(
     "Rule of thumb: **start with SFT.** Reach for GRPO when you want to improve",
     "reasoning or optimize for a reward you can measure, after you have a decent",
     "SFT baseline.",
+))
+
+cells.append(img(
+    "02-sft-vs-grpo",
+    "SFT learns from gold input-output examples; GRPO scores several candidate answers and rewards the best",
+    "The two families: SFT imitates gold answers; GRPO rewards the best of several tries.",
 ))
 
 cells.append(md(
@@ -162,6 +185,12 @@ cells.append(md(
     "| Full fine-tune | 100 % of weights | Very high | You have big GPUs and lots of data |",
     "| LoRA | Small adapters (~1-2 %) | Medium | Great default, adapters are portable |",
     "| QLoRA | Adapters on a 4-bit base | Low | Best for single-GPU / limited VRAM |",
+))
+
+cells.append(img(
+    "03-full-lora-qlora",
+    "Full fine-tuning trains all weights (high memory); LoRA freezes the base and trains small adapters; QLoRA quantizes the base to 4-bit then trains adapters (low memory)",
+    "The memory trick: freeze the base (LoRA) and quantize it to 4-bit (QLoRA) to fit on one GPU.",
 ))
 
 cells.append(md(
@@ -227,6 +256,12 @@ cells.append(md(
     "",
     "The launch is just two moves: **run one command in a terminal**, then **open",
     "the secure link it prints**.",
+))
+
+cells.append(img(
+    "05-launch-flow",
+    "Run unsloth studio in a terminal, copy the secure Cloudflare link it prints, and open it in your browser",
+    "Two moves: run the command, then open the secure Cloudflare link it prints.",
 ))
 
 cells.append(md(
@@ -329,7 +364,15 @@ cells.append(md(
     "",
     "Once the Studio UI is open, here is the flow to follow. Everything maps back",
     "to the concepts in Part 1.",
-    "",
+))
+
+cells.append(img(
+    "04-studio-loop",
+    "The Studio loop: pick a model, pick data, choose SFT or QLoRA, train and watch the loss drop, then compare against the base",
+    "The whole loop in the Studio UI, the same SFT / LoRA / QLoRA under the hood.",
+))
+
+cells.append(md(
     "1. **Choose a model.** Start small, for example a 4-bit Qwen3-4B or a Llama",
     "   3.x 8B instruct. Small models train fast and are perfect for learning.",
     "",
