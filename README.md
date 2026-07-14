@@ -7,7 +7,7 @@ Working repository for LLM fine-tuning notebooks and workshop material, targetin
 ```
 notebooks/
   unsloth/
-    00-start-here-unsloth-studio-on-radeon-cloud.ipynb  START HERE: student landing guide
+    model-finetuning-unsloth-radeon.ipynb            START HERE: student landing guide
     llama-3.2-vision-finetune-unsloth.ipynb   Llama 3.2 Vision fine-tune (Unsloth)
     llama-3.1-8b-grpo-unsloth.ipynb           Llama 3.1 8B GRPO (Unsloth), reference
     model-finetuning-on-radeon.ipynb          ACTIVE working notebook (Radeon GPU)
@@ -22,7 +22,7 @@ scripts/
 ## Start here (new students)
 
 New to fine-tuning? Open
-`notebooks/unsloth/00-start-here-unsloth-studio-on-radeon-cloud.ipynb`.
+`notebooks/unsloth/model-finetuning-unsloth-radeon.ipynb`.
 
 It is a friendly, self-contained landing notebook that:
 

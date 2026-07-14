@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the student-facing landing notebook for Unsloth Studio on Radeon Cloud.
 
-Produces notebooks/unsloth/00-start-here-unsloth-studio-on-radeon-cloud.ipynb.
+Produces notebooks/unsloth/model-finetuning-unsloth-radeon.ipynb.
 Kept as a generator so the notebook is reproducible and easy to edit in plain text
 (no em dashes, per repo style).
 """
@@ -12,7 +12,7 @@ NB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "notebooks",
     "unsloth",
-    "00-start-here-unsloth-studio-on-radeon-cloud.ipynb",
+    "model-finetuning-unsloth-radeon.ipynb",
 )
 
 
