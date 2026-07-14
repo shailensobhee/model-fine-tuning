@@ -7,6 +7,7 @@ Working repository for LLM fine-tuning notebooks and workshop material, targetin
 ```
 notebooks/
   unsloth/
+    00-start-here-unsloth-studio-on-radeon-cloud.ipynb  START HERE: student landing guide
     llama-3.2-vision-finetune-unsloth.ipynb   Llama 3.2 Vision fine-tune (Unsloth)
     llama-3.1-8b-grpo-unsloth.ipynb           Llama 3.1 8B GRPO (Unsloth), reference
     model-finetuning-on-radeon.ipynb          ACTIVE working notebook (Radeon GPU)
@@ -14,7 +15,26 @@ notebooks/
     qwen3_qlora_smoketest.executed.ipynb      Same notebook, with saved run outputs
     qwen3-qlora-radeon-w7900-notes.md         Setup notes, gotchas, measured results
     utils_unsloth.py                          Helper module for the vision notebook
+scripts/
+  build_landing_notebook.py                   Generator for the start-here landing notebook
 ```
+
+## Start here (new students)
+
+New to fine-tuning? Open
+`notebooks/unsloth/00-start-here-unsloth-studio-on-radeon-cloud.ipynb`.
+
+It is a friendly, self-contained landing notebook that:
+
+- explains the core concepts in plain English (LLMs, fine-tuning, SFT, GRPO,
+  LoRA, QLoRA, and what training data looks like),
+- walks you through launching **Unsloth Studio** on a Radeon Cloud GPU session
+  (open a terminal, run `unsloth studio -H 0.0.0.0 -p 8888`, then open the
+  secure Cloudflare link it prints),
+- and guides you through your first fine-tune inside the Studio UI.
+
+No prior deep-learning experience required. The notebook is regenerated from
+`scripts/build_landing_notebook.py` if you want to edit it in plain text.
 
 ## Working notebook
 
@@ -51,6 +71,7 @@ userspace, and the ROCm bitsandbytes pre-release) are documented in
 
 ## Roadmap
 
+- [x] Student landing notebook (Unsloth Studio on Radeon Cloud)
 - [x] Unsloth Llama 3.2 Vision fine-tune notebook
 - [x] Unsloth Llama 3.1 8B GRPO notebook
 - [x] Verified Qwen3-4B QLoRA notebook on Radeon (W7900 / RDNA3)
