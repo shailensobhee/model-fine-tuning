@@ -37,12 +37,18 @@ def code(*lines):
     }
 
 
-def img(name, alt, caption=None):
-    """Markdown cell embedding a diagram from assets/ by relative path.
+def img(name, alt, caption=None, asset_prefix="assets/"):
+    """Markdown cell embedding a diagram from the assets folder by relative path.
 
     Relative paths render in both JupyterLab and GitHub's notebook viewer.
+
+    `asset_prefix` controls the relative path to the assets folder. It defaults
+    to "assets/" (correct for this repo, where the notebook and its assets/
+    folder are siblings). Downstream repos where the notebook lives deeper can
+    override it via cfg["asset_prefix"] (e.g. "../../assets/") so the built
+    notebook points at a repo-root assets/ folder.
     """
-    lines = [f"![{alt}](assets/{name}.png)"]
+    lines = [f"![{alt}]({asset_prefix}{name}.png)"]
     if caption:
         lines += ["", f"*{caption}*"]
     return md(*lines)
@@ -68,6 +74,11 @@ def build_cells(cfg):
       working_nb_bullet     list of lines for the next-steps working-nb bullet
     """
     cells = []
+
+    # Relative path from the notebook to its assets folder. Defaults to the
+    # sibling "assets/" layout used in this repo; downstream repos where the
+    # notebook lives deeper can override via cfg["asset_prefix"].
+    asset_prefix = cfg.get("asset_prefix", "assets/")
 
     # ------------------------------------------------------------ title
     cells.append(md(
@@ -134,6 +145,7 @@ def build_cells(cfg):
         "01-finetuning-overview",
         "Fine-tuning takes a pre-trained base model, adds your data, and produces a model specialized to your task",
         "Fine-tuning: a general base model plus your data becomes a specialist.",
+        asset_prefix=asset_prefix,
     ))
 
     cells.append(md(
@@ -171,6 +183,7 @@ def build_cells(cfg):
         "02-sft-vs-grpo",
         "SFT learns from gold input-output examples; GRPO scores several candidate answers and rewards the best",
         "The two families: SFT imitates gold answers; GRPO rewards the best of several tries.",
+        asset_prefix=asset_prefix,
     ))
 
     cells.append(md(
@@ -208,6 +221,7 @@ def build_cells(cfg):
         "03-full-lora-qlora",
         "Full fine-tuning trains all weights (high memory); LoRA freezes the base and trains small adapters; QLoRA quantizes the base to 4-bit then trains adapters (low memory)",
         "The memory trick: freeze the base (LoRA) and quantize it to 4-bit (QLoRA) to fit on one GPU.",
+        asset_prefix=asset_prefix,
     ))
 
     cells.append(md(
@@ -277,6 +291,7 @@ def build_cells(cfg):
         "05-launch-flow",
         "Run unsloth studio in a terminal, copy the secure Cloudflare link it prints, and open it in your browser",
         "Two moves: run the command, then open the secure Cloudflare link it prints.",
+        asset_prefix=asset_prefix,
     ))
 
     cells.append(md(
@@ -377,6 +392,7 @@ def build_cells(cfg):
         "04-studio-loop",
         "The Studio loop: pick a model, pick data, choose SFT or QLoRA, train and watch the loss drop, then compare against the base",
         "The whole loop in the Studio UI, the same SFT / LoRA / QLoRA under the hood.",
+        asset_prefix=asset_prefix,
     ))
 
     cells.append(md(
