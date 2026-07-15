@@ -7,7 +7,8 @@ Working repository for LLM fine-tuning notebooks and workshop material, targetin
 ```
 notebooks/
   unsloth/
-    model-finetuning-unsloth-radeon.ipynb            START HERE: student landing guide
+    model-finetuning-unsloth-radeon.ipynb            START HERE (Radeon): student landing guide
+    model-finetuning-unsloth-instinct.ipynb          START HERE (Instinct MI300X): student landing guide
     llama-3.2-vision-finetune-unsloth.ipynb   Llama 3.2 Vision fine-tune (Unsloth)
     llama-3.1-8b-grpo-unsloth.ipynb           Llama 3.1 8B GRPO (Unsloth), reference
     model-finetuning-on-radeon.ipynb          ACTIVE working notebook (Radeon GPU)
@@ -16,30 +17,49 @@ notebooks/
     qwen3-qlora-radeon-w7900-notes.md         Setup notes, gotchas, measured results
     utils_unsloth.py                          Helper module for the vision notebook
 scripts/
-  build_landing_notebook.py                   Generator for the start-here landing notebook
+  landing_content.py                          Shared content for BOTH landing notebooks (edit generic text here)
+  build_landing_notebook.py                   Generator: builds both landing notebooks from landing_content.py
   build_diagrams.py                            Generator for the notebook concept diagrams
 notebooks/unsloth/assets/                      Concept diagrams (SVG source + PNG), embedded in the landing notebook
 ```
 
 ## Start here (new students)
 
-New to fine-tuning? Open
-`notebooks/unsloth/model-finetuning-unsloth-radeon.ipynb`.
+New to fine-tuning? Open the landing notebook for your GPU:
 
-It is a friendly, self-contained landing notebook that:
+- Radeon / RDNA (Radeon Cloud): `notebooks/unsloth/model-finetuning-unsloth-radeon.ipynb`
+- Instinct MI300X (AMD Dev Cloud): `notebooks/unsloth/model-finetuning-unsloth-instinct.ipynb`
 
-- explains the core concepts in plain English (LLMs, fine-tuning, SFT, GRPO,
+Both are friendly, self-contained landing notebooks that:
+
+- explain the core concepts in plain English (LLMs, fine-tuning, SFT, GRPO,
   LoRA, QLoRA, and what training data looks like),
-- walks you through launching **Unsloth Studio** on a Radeon Cloud GPU session
-  (open a terminal, run `unsloth studio -H 0.0.0.0 -p 8888`, then open the
-  secure Cloudflare link it prints),
-- and guides you through your first fine-tune inside the Studio UI.
+- walk you through launching **Unsloth Studio** on your GPU session (open a
+  terminal, run `unsloth studio -H 0.0.0.0 -p 8888`, then open the secure
+  Cloudflare link it prints),
+- and guide you through your first fine-tune inside the Studio UI.
 
-No prior deep-learning experience required. The notebook is regenerated from
-`scripts/build_landing_notebook.py` if you want to edit it in plain text, and
-the five concept diagrams it embeds are regenerated from
-`scripts/build_diagrams.py` (light-themed SVG source plus PNG, rendered with
-cairosvg, no external tools needed).
+No prior deep-learning experience required.
+
+### Keeping the two landing notebooks in sync
+
+The generic teaching content is identical across both notebooks and lives in
+ONE place: `scripts/landing_content.py`. Only the hardware and access specific
+bits (title, VRAM headroom, how you reach the environment, platform name)
+differ, and those are supplied by small per-target config dicts in
+`scripts/build_landing_notebook.py`.
+
+To update a concept, explanation, or workflow step, edit
+`scripts/landing_content.py` and regenerate BOTH notebooks:
+
+```bash
+python scripts/build_landing_notebook.py            # builds radeon + instinct
+python scripts/build_landing_notebook.py radeon     # or just one
+```
+
+This guarantees the two notebooks never drift. The five concept diagrams they
+embed are regenerated from `scripts/build_diagrams.py` (light-themed SVG source
+plus PNG, rendered with cairosvg, no external tools needed).
 
 ## Working notebook
 
@@ -77,6 +97,7 @@ userspace, and the ROCm bitsandbytes pre-release) are documented in
 ## Roadmap
 
 - [x] Student landing notebook (Unsloth Studio on Radeon Cloud)
+- [x] Student landing notebook (Unsloth Studio on Instinct MI300X / AMD Dev Cloud)
 - [x] Unsloth Llama 3.2 Vision fine-tune notebook
 - [x] Unsloth Llama 3.1 8B GRPO notebook
 - [x] Verified Qwen3-4B QLoRA notebook on Radeon (W7900 / RDNA3)
