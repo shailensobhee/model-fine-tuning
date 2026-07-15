@@ -37,12 +37,48 @@ def code(*lines):
     }
 
 
-def img(name, alt, caption=None):
-    """Markdown cell embedding a diagram from assets/ by relative path.
+import base64 as _base64
+import os as _os
 
-    Relative paths render in both JupyterLab and GitHub's notebook viewer.
+
+def img(name, alt, caption=None, asset_prefix="assets/", embed_dir=None):
+    """Markdown cell embedding a diagram, either by relative path or inline base64.
+
+    Two modes:
+
+    1. External reference (default, embed_dir=None): emits
+       ``![alt](asset_prefix + name.png)``. Relative paths render in JupyterLab
+       and in GitHub's notebook viewer FOR PUBLIC REPOS. GitHub rewrites the
+       path to a raw.githubusercontent.com URL, which an unauthenticated browser
+       can only fetch for public repos.
+
+    2. Inline embed (embed_dir set to a folder containing name.png): reads the
+       PNG, base64-encodes it, and emits a self-contained cell using the
+       notebook ``attachments`` mechanism (``![alt](attachment:name.png)`` plus a
+       cell-level ``attachments`` dict). The image bytes live inside the .ipynb,
+       so there is NO external fetch. This is what lets diagrams render in a
+       PRIVATE repo (and offline), where raw.githubusercontent.com returns 404
+       to an unauthenticated browser.
+
+    `asset_prefix` controls the relative path in mode 1. It defaults to "assets/"
+    (correct for this repo, where the notebook and its assets/ folder are
+    siblings). Downstream repos where the notebook lives deeper can override it
+    via cfg["asset_prefix"] (e.g. "../../assets/").
     """
-    lines = [f"![{alt}](assets/{name}.png)"]
+    fname = f"{name}.png"
+
+    if embed_dir:
+        png_path = _os.path.join(embed_dir, fname)
+        with open(png_path, "rb") as f:
+            b64 = _base64.b64encode(f.read()).decode("ascii")
+        lines = [f"![{alt}](attachment:{fname})"]
+        if caption:
+            lines += ["", f"*{caption}*"]
+        cell = md(*lines)
+        cell["attachments"] = {fname: {"image/png": b64}}
+        return cell
+
+    lines = [f"![{alt}]({asset_prefix}{fname})"]
     if caption:
         lines += ["", f"*{caption}*"]
     return md(*lines)
@@ -68,6 +104,21 @@ def build_cells(cfg):
       working_nb_bullet     list of lines for the next-steps working-nb bullet
     """
     cells = []
+
+    # Relative path from the notebook to its assets folder. Defaults to the
+    # sibling "assets/" layout used in this repo; downstream repos where the
+    # notebook lives deeper can override via cfg["asset_prefix"].
+    asset_prefix = cfg.get("asset_prefix", "assets/")
+
+    # When cfg["embed_dir"] is set (a folder holding the diagram PNGs), the
+    # diagrams are inlined as base64 attachments instead of referenced by path.
+    # This makes the notebook self-contained so images render in a PRIVATE repo
+    # on GitHub (where raw.githubusercontent.com 404s to an unauthenticated
+    # browser) and offline. asset_prefix is ignored in this mode.
+    embed_dir = cfg.get("embed_dir")
+
+    def _img(name, alt, caption=None):
+        return img(name, alt, caption, asset_prefix=asset_prefix, embed_dir=embed_dir)
 
     # ------------------------------------------------------------ title
     cells.append(md(
@@ -130,7 +181,7 @@ def build_cells(cfg):
         "a giant prompt, and it lets a small model punch above its weight.",
     ))
 
-    cells.append(img(
+    cells.append(_img(
         "01-finetuning-overview",
         "Fine-tuning takes a pre-trained base model, adds your data, and produces a model specialized to your task",
         "Fine-tuning: a general base model plus your data becomes a specialist.",
@@ -167,7 +218,7 @@ def build_cells(cfg):
         "SFT baseline.",
     ))
 
-    cells.append(img(
+    cells.append(_img(
         "02-sft-vs-grpo",
         "SFT learns from gold input-output examples; GRPO scores several candidate answers and rewards the best",
         "The two families: SFT imitates gold answers; GRPO rewards the best of several tries.",
@@ -204,7 +255,7 @@ def build_cells(cfg):
         "| QLoRA | Adapters on a 4-bit base | Low | Best for single-GPU / limited VRAM |",
     ))
 
-    cells.append(img(
+    cells.append(_img(
         "03-full-lora-qlora",
         "Full fine-tuning trains all weights (high memory); LoRA freezes the base and trains small adapters; QLoRA quantizes the base to 4-bit then trains adapters (low memory)",
         "The memory trick: freeze the base (LoRA) and quantize it to 4-bit (QLoRA) to fit on one GPU.",
@@ -273,7 +324,7 @@ def build_cells(cfg):
         "the secure link it prints**.",
     ))
 
-    cells.append(img(
+    cells.append(_img(
         "05-launch-flow",
         "Run unsloth studio in a terminal, copy the secure Cloudflare link it prints, and open it in your browser",
         "Two moves: run the command, then open the secure Cloudflare link it prints.",
@@ -373,7 +424,7 @@ def build_cells(cfg):
         "to the concepts in Part 1.",
     ))
 
-    cells.append(img(
+    cells.append(_img(
         "04-studio-loop",
         "The Studio loop: pick a model, pick data, choose SFT or QLoRA, train and watch the loss drop, then compare against the base",
         "The whole loop in the Studio UI, the same SFT / LoRA / QLoRA under the hood.",

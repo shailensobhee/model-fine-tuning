@@ -116,8 +116,15 @@ INSTINCT = {
 
 TARGETS = {"radeon": RADEON, "instinct": INSTINCT}
 
+# Folder holding the diagram PNGs, embedded into the notebooks as base64
+# attachments so the notebooks are self-contained and render everywhere
+# (JupyterLab, GitHub public AND private repos, offline). See landing_content.img.
+ASSETS_DIR = os.path.join(NB_DIR, "assets")
+
 
 def build_one(cfg):
+    cfg = dict(cfg)
+    cfg.setdefault("embed_dir", ASSETS_DIR)
     cells = build_cells(cfg)
     notebook = {
         "cells": cells,
