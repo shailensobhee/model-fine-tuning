@@ -16,6 +16,18 @@ Usage:
   python scripts/build_landing_notebook.py radeon     # build one
   python scripts/build_landing_notebook.py instinct
 
+WARNING: the instinct notebook has DIVERGED from this generator. It is now
+hand-maintained (verified 2026-07-16 against the live AMD Dev Cloud portal):
+  - the connection cell derives the Jupyter server-proxy URL
+    (<host>/jupyter-user-<id>/proxy/8890/) instead of reading
+    /workspace/CONNECTION_INFO.txt and advertising a Cloudflare link. On the
+    hosted portal that file does not exist and the Cloudflare tunnel fails to
+    start, so the old generated cell only ever printed "not up yet" + an IP.
+  - diagram images are embedded (base64) and downscaled.
+Regenerating instinct from this script will REVERT those fixes. Do NOT run
+`build_landing_notebook.py instinct` without re-applying the proxy-aware
+connection cell afterwards. The radeon target is still generator-driven.
+
 No em dashes anywhere (repo style rule).
 """
 import json
