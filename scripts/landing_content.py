@@ -14,6 +14,8 @@ edit the generic content here and both notebooks regenerate together.
 
 No em dashes anywhere (repo style rule).
 """
+import base64
+import os
 
 
 def md(*lines):
@@ -37,12 +39,29 @@ def code(*lines):
     }
 
 
-def img(name, alt, caption=None):
-    """Markdown cell embedding a diagram from assets/ by relative path.
+ASSETS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    os.pardir,
+    "notebooks",
+    "unsloth",
+    "assets",
+)
 
-    Relative paths render in both JupyterLab and GitHub's notebook viewer.
+
+def img(name, alt, caption=None):
+    """Markdown cell embedding a diagram from assets/ as a base64 data URI.
+
+    The PNG bytes are inlined directly into the markdown as a
+    `data:image/png;base64,...` URI. This makes the notebook fully
+    self-contained: it renders in JupyterLab and GitHub's notebook viewer
+    with no external file dependency, which is required for a PRIVATE repo
+    where relative `assets/...` paths 404. Unlike notebook `attachments`,
+    a data URI cannot desync from its reference.
     """
-    lines = [f"![{alt}](assets/{name}.png)"]
+    png_path = os.path.join(ASSETS_DIR, f"{name}.png")
+    with open(png_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    lines = [f"![{alt}](data:image/png;base64,{b64})"]
     if caption:
         lines += ["", f"*{caption}*"]
     return md(*lines)
