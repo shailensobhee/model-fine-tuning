@@ -138,8 +138,28 @@ export("philschmid/guanaco-sharegpt-style", "guanaco_sharegpt.jsonl",
                   "output": first(e.get("conversations"), ("gpt","assistant"))})
 PYEOF
 
+# ---- Stage JSONL into Studio's uploads dir so they show under "Local" --------
+# Studio's "Local" tab scans ONLY <studio>/assets/datasets/{recipes,uploads};
+# it does NOT scan the HF cache. The uploads scanner follows symlinks (verified
+# against the Studio backend), so link the persistent /workspace JSONL exports
+# into the uploads dir. Self-contained here so BOTH launch paths (entrypoint.sh
+# for standalone docker run, and studio_autostart.sh for the AMD Dev Cloud
+# Jupyter-hook path) get Local-tab datasets without extra wiring.
+STUDIO_HOME="${UNSLOTH_STUDIO_HOME:-/root/.unsloth/studio}"
+UPLOADS_DIR="$STUDIO_HOME/assets/datasets/uploads"
+mkdir -p "$UPLOADS_DIR"
+staged=0
+for f in "$JSONL_DIR"/*.jsonl; do
+  [ -e "$f" ] || continue
+  if ln -sf "$f" "$UPLOADS_DIR/$(basename "$f")"; then
+    staged=$((staged+1))
+  fi
+done
+echo "== staged $staged JSONL dataset(s) into Studio uploads ($UPLOADS_DIR) =="
+
 echo "== prefetch inventory =="
 echo "-- models --";   ls -1 "$HF_HUB_CACHE"      2>/dev/null | sed 's/^/   /'
 echo "-- datasets --"; ls -1 "$HF_DATASETS_CACHE" 2>/dev/null | sed 's/^/   /'
 echo "-- JSONL --";    ls -1 "$JSONL_DIR"         2>/dev/null | sed 's/^/   /'
+echo "-- Local uploads --"; ls -1 "$UPLOADS_DIR"  2>/dev/null | sed 's/^/   /'
 echo "== prefetch done =="

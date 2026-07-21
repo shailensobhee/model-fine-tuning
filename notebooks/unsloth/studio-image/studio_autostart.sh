@@ -47,6 +47,28 @@ fi
 # exit (the trap fires on our exit, which is fine: the launch is already done).
 trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT
 
+# ---- fire-and-forget model/dataset prefetch --------------------------------
+# On the AMD Dev Cloud the platform overrides the container ENTRYPOINT, so
+# entrypoint.sh (which normally kicks off the prefetch) never runs. This hook is
+# the only launch path that survives, so start the prefetch here too. It is
+# idempotent (per-repo stamps under /workspace) and self-contained (also stages
+# the Local-tab JSONL), and we background it fully detached so it never delays
+# Studio startup.
+#
+# Guard is a RUNNING-process check (not a permanent marker): a session reset
+# wipes /workspace (models + stamps gone) while this hook re-fires, so we MUST be
+# free to re-download. We only skip if a prefetch is already in flight, which
+# prevents concurrent duplicate runs when jupyter-lab loads this config twice.
+PREFETCH=/usr/local/bin/prefetch_workspace.sh
+if [ -x "$PREFETCH" ]; then
+    if pgrep -f "bash $PREFETCH" >/dev/null 2>&1; then
+        log "prefetch already running; not starting another"
+    else
+        log "starting background prefetch ($PREFETCH -> $WS/prefetch.log)"
+        setsid bash "$PREFETCH" >> "$WS/prefetch.log" 2>&1 < /dev/null &
+    fi
+fi
+
 health() {
     curl -fsS -m 4 "http://127.0.0.1:${STUDIO_PORT}/api/health" 2>/dev/null \
         | grep -q '"healthy"'
