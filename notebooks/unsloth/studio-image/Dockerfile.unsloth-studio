@@ -115,7 +115,36 @@ RUN set -eux; \
 COPY cloudflared-shim.sh /usr/local/bin/cloudflared
 RUN chmod 0755 /usr/local/bin/cloudflared && command -v cloudflared
 
-# ---- 7. Point model + dataset DEFAULT dirs at the persistent /workspace ------
+# ---- 7. Pre-build causal-conv1d so training never compiles it at run time ----
+# Qwen3.5 (and other linear-attention / SSM hybrids) lazy-import causal_conv1d;
+# Studio's training worker then installs it wheel-first, but NO prebuilt ROCm
+# wheel exists upstream, so on the platform it falls back to a source build the
+# first time you start a fine-tune ("Compiling causal-conv1d from source for
+# ROCm (this may take several minutes)..."). We do that compile ONCE here, into
+# the same interpreter the trainer uses, so worker._is_importable("causal_conv1d")
+# is already True at run time and the compile step is skipped entirely.
+#
+# Build notes (learned the hard way):
+#   * causal-conv1d 1.6.1's setup.py reads HIP_ARCHITECTURES (NOT
+#     PYTORCH_ROCM_ARCH); default "native" fails in a GPU-less build container
+#     with "cannot determine hip architecture". Pin gfx942 (MI300X/MI325X).
+#   * ROCm clang needs --gcc-install-dir at a gcc whose C++ headers exist
+#     (gcc-14 runtime on Ubuntu 24.04 lacks them); gcc-13 is present here.
+#     This mirrors exactly what worker.py injects at run time.
+#   * ninja gives a parallel build; without it torch falls back to slow distutils.
+# Version stays in lockstep with ssm_runtime.CAUSAL_CONV1D_PACKAGE_VERSION.
+RUN set -eux; \
+    PY=/root/.unsloth/studio/unsloth_studio/bin/python; \
+    "$PY" -m pip install --no-cache-dir ninja; \
+    export HIP_ARCHITECTURES=gfx942; \
+    export CAUSAL_CONV1D_FORCE_BUILD=TRUE; \
+    export MAX_JOBS=32; \
+    export HIPCC_COMPILE_FLAGS_APPEND="--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13"; \
+    uv pip install --python "$PY" --no-build-isolation --no-deps --no-cache \
+        --reinstall causal-conv1d==1.6.1; \
+    "$PY" -c "import causal_conv1d; from causal_conv1d import causal_conv1d_fn, causal_conv1d_update; print('causal_conv1d baked', causal_conv1d.__version__)"
+
+# ---- 8. Point model + dataset DEFAULT dirs at the persistent /workspace ------
 # Studio resolves model/dataset locations purely from these env vars at startup.
 # STUDIO_PORT=8890 because the platform's jupyter-lab already owns 8888.
 ENV HF_HOME=/workspace/.hf \
@@ -128,7 +157,7 @@ ENV HF_HOME=/workspace/.hf \
     JUPYTER_PORT=8888 \
     TUNNELS_JSON=/run/aai/tunnels.json
 
-# ---- 8. Auto-start plumbing -------------------------------------------------
+# ---- 9. Auto-start plumbing -------------------------------------------------
 # studio_autostart.sh    : launches Studio on :$STUDIO_PORT with a Cloudflare
 #                          tunnel and records the public URL in $TUNNELS_JSON
 #                          (under /run/aai, OUTSIDE /workspace, so a session
