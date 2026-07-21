@@ -142,10 +142,20 @@ ENV HF_HOME=/workspace/.hf \
 COPY studio_autostart.sh      /usr/local/bin/studio_autostart.sh
 COPY prefetch_workspace.sh    /usr/local/bin/prefetch_workspace.sh
 COPY entrypoint.sh            /usr/local/bin/entrypoint.sh
+COPY seed_admin.sh            /usr/local/bin/seed_admin.sh
 COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 RUN chmod 0755 /usr/local/bin/studio_autostart.sh \
         /usr/local/bin/prefetch_workspace.sh \
-        /usr/local/bin/entrypoint.sh
+        /usr/local/bin/entrypoint.sh \
+        /usr/local/bin/seed_admin.sh
+
+# Bake the admin account into the image so the very first boot skips the
+# "Setup your account / Choose a new password" screen. Seeds user
+# "unsloth" / "amdadvancingai" (must_change_password=False) into
+# /root/.unsloth/studio/auth/auth.db, which is in the image layer (NOT
+# /workspace), so it survives the per-session /workspace wipe. studio_autostart.sh
+# re-runs the same idempotent seed on boot as a self-heal.
+RUN /usr/local/bin/seed_admin.sh
 
 WORKDIR /workspace
 

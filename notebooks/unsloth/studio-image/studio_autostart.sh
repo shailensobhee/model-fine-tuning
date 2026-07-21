@@ -47,6 +47,20 @@ fi
 # exit (the trap fires on our exit, which is fine: the launch is already done).
 trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT
 
+# ---- preset the admin password (skip the first-boot setup screen) ----------
+# Studio's ensure_default_admin() would otherwise seed a RANDOM password with
+# must_change_password=True, forcing the "Setup your account / Choose a new
+# password" screen. We seed user "unsloth" / "amdadvancingai" first (idempotent,
+# never clobbers a changed password) so ensure_default_admin() is a no-op and the
+# user goes straight to login. Run this BEFORE Studio launches. The auth DB lives
+# in the image layer (not /workspace), so this normally only ever seeds once; the
+# call stays here as a self-heal in case the auth dir is wiped.
+SEED_ADMIN=/usr/local/bin/seed_admin.sh
+if [ -x "$SEED_ADMIN" ]; then
+    log "ensuring admin account is preset (skips first-boot password setup)"
+    bash "$SEED_ADMIN" || log "seed_admin returned non-zero (non-fatal)"
+fi
+
 # ---- fire-and-forget model/dataset prefetch --------------------------------
 # On the AMD Dev Cloud the platform overrides the container ENTRYPOINT, so
 # entrypoint.sh (which normally kicks off the prefetch) never runs. This hook is
