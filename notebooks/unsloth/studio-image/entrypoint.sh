@@ -11,8 +11,8 @@
 set -uo pipefail
 
 WS=/workspace
-STUDIO_PORT="${STUDIO_PORT:-8890}"
-JUPYTER_PORT="${JUPYTER_PORT:-8888}"
+STUDIO_PORT="${STUDIO_PORT:-8888}"
+JUPYTER_PORT="${JUPYTER_PORT:-8889}"
 STUDIO_HOME="${UNSLOTH_STUDIO_HOME:-/root/.unsloth/studio}"
 # Studio's install lives in the venv install root, NOT on /workspace. Only the HF
 # caches belong on the persistent volume. Force the studio home to the real
@@ -35,6 +35,33 @@ fi
 echo "[entrypoint] starting /workspace prefetch in background (see $WS/prefetch.log)"
 /usr/local/bin/prefetch_workspace.sh > "$WS/prefetch.log" 2>&1 &
 PREFETCH_PID=$!
+
+# ---- 1b. Stage exported JSONL into Studio's uploads dir so they show up under
+#          the Studio "Local" dataset tab. The Local tab scans ONLY
+#          <studio>/assets/datasets/{recipes,uploads}; it does NOT scan the HF
+#          cache. Symlinks are followed by the scanner (it uses is_file()), so we
+#          link the persistent /workspace JSONL into uploads. Backgrounded: waits
+#          for the prefetch export to finish, then links whatever is present.
+UPLOADS_DIR="$STUDIO_HOME/assets/datasets/uploads"
+JSONL_DIR="$WS/datasets_jsonl"
+(
+  mkdir -p "$UPLOADS_DIR"
+  for _ in $(seq 1 240); do
+    if ls "$JSONL_DIR"/*.jsonl >/dev/null 2>&1; then
+      for f in "$JSONL_DIR"/*.jsonl; do
+        ln -sf "$f" "$UPLOADS_DIR/$(basename "$f")"
+      done
+    fi
+    # keep re-linking until prefetch finishes (new files may appear)
+    kill -0 "$PREFETCH_PID" 2>/dev/null || break
+    sleep 5
+  done
+  # final pass after prefetch completes
+  for f in "$JSONL_DIR"/*.jsonl; do
+    [ -e "$f" ] && ln -sf "$f" "$UPLOADS_DIR/$(basename "$f")"
+  done
+  echo "[entrypoint] staged JSONL datasets into Studio uploads: $UPLOADS_DIR"
+) >> "$WS/prefetch.log" 2>&1 &
 
 # ---- 2. Launch Studio (0.0.0.0 -> auto Cloudflare quick-tunnel, IPv4 forced) -
 echo "[entrypoint] launching Unsloth Studio on :$STUDIO_PORT (Cloudflare tunnel, IPv4)"
@@ -79,9 +106,9 @@ cat <<MOTD
   (you'll be asked to change it on first login)
 
   Persistent /workspace layout:
-    models  (HF cache)    : $WS/hf_cache
-    datasets (HF cache)   : $WS/.hf/datasets
-    local JSONL (Local)   : $WS/datasets_jsonl
+    models  (HF cache)    : $WS/hf_cache      (auto-listed in Studio model picker)
+    datasets (HF cache)   : $WS/.hf/datasets  (use via Studio "Hugging Face" tab)
+    local JSONL exports   : $WS/datasets_jsonl (linked into Studio "Local" tab)
     Studio data           : $STUDIO_HOME
 
   Prefetch (backgrounded) : tail -f $WS/prefetch.log
@@ -93,22 +120,6 @@ MOTD
 # Persist the MOTD so it can be re-read any time.
 { echo "Public URL : ${CF_URL}"; echo "Local URL  : http://0.0.0.0:$STUDIO_PORT"; \
   echo "Jupyter    : $JUP_LINE"; echo "Admin      : unsloth / $BOOT_PW"; } > "$WS/CONNECTION_INFO.txt"
-
-# Also write the machine-readable tunnel registry the notebook reads. Lives
-# under /run/aai (outside /workspace) so a session reset never deletes it.
-TUNNELS_JSON="${TUNNELS_JSON:-/run/aai/tunnels.json}"
-mkdir -p "$(dirname "$TUNNELS_JSON")"
-python3 - "$TUNNELS_JSON" "$CF_URL" "$STUDIO_PORT" <<'PY' || true
-import json, sys, datetime
-path, url, port = sys.argv[1:4]
-json.dump({
-    "studio":     url or None,
-    "local":      f"http://127.0.0.1:{port}",
-    "port":       int(port),
-    "healthy":    bool(url),
-    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-}, open(path, "w"))
-PY
 
 # ---- 6. Stay in foreground on the Studio process ----------------------------
 wait "$STUDIO_PID"
