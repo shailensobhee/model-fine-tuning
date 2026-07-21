@@ -1,0 +1,156 @@
+# =============================================================================
+# Unsloth Studio for AMD MI300X (ROCm) - AMD Dev Cloud DevZone image
+#   builds:  shailensobhee1/unsloth-studio-amd-aai:mi300x
+#
+# This is the image the "Unsloth Studio on AMD Instinct MI300X" DevZone tile
+# actually runs. It gives you:
+#   * Unsloth Studio (no-code fine-tuning web UI) + Core, via the one-line installer
+#   * REAL ROCm PyTorch (torch 2.11.0+rocm7.2) so the MI300X GPU actually works
+#     (the upstream installer lands torch+cpu on the GPU-less build host; we force ROCm)
+#   * ROCm bitsandbytes pre-release (QLoRA 4-bit is NaN-buggy on AMD without it)
+#   * JupyterLab
+#   * A Cloudflare quick-tunnel that WORKS on hosts with broken IPv6 egress
+#     (env TUNNEL_EDGE_IP_VERSION=4 + a pre-installed cloudflared IPv4 shim on PATH)
+#   * AUTO-START of Studio + its Cloudflare tunnel via a Jupyter server startup
+#     hook (see the note below on why this is NOT a Docker ENTRYPOINT)
+#   * Model/dataset HF caches pointed at the persistent /workspace volume
+#
+# ---------------------------------------------------------------------------
+# WHY A JUPYTER STARTUP HOOK AND NOT AN ENTRYPOINT
+# ---------------------------------------------------------------------------
+# On AMD Dev Cloud the notebook platform is JupyterHub-style: it SPAWNS this
+# image with its own command, roughly
+#     /bin/sh -c "pip install ... jupyter ... && jupyter-lab --ip=0.0.0.0 --port=8888 ..."
+# That injected command REPLACES the image ENTRYPOINT/CMD, so a classic
+# `ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]` never runs and Studio never
+# comes up (the exact symptom we debugged: port 8890 closed, no tunnel).
+# The one launch path that survives the platform override is a Jupyter server
+# config hook: `jupyter-lab` ALWAYS loads /etc/jupyter/jupyter_server_config.py,
+# no matter how it was invoked. So we start Studio + the tunnel from there.
+# `entrypoint.sh` is still shipped for standalone `docker run` use.
+#
+# ROCm base note: "latest ROCm" that still has PyTorch wheels is 7.2. The newer
+# 7.14.0-full tag has NO torch wheels (download.pytorch.org/whl/rocm7.3+ 404s),
+# so building on it would force CPU-only torch = a dead GPU. 7.2.4-complete is the
+# newest ROCm with a real MI300X-verified torch stack (torch 2.11.0+rocm7.2).
+# =============================================================================
+FROM rocm/dev-ubuntu-24.04:7.2.4-complete
+
+LABEL org.opencontainers.image.title="Unsloth Studio AMD (MI300X)" \
+      org.opencontainers.image.description="Unsloth Studio + Core on ROCm for AMD MI300X, with IPv4 Cloudflare tunnel fix, Jupyter-hook Studio auto-start, and /workspace-persistent model/dataset caches." \
+      org.opencontainers.image.source="https://hub.docker.com/r/shailensobhee1/unsloth-studio-amd-aai"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_ROOT_USER_ACTION=ignore \
+    PATH="/root/.local/bin:${PATH}"
+
+# Fail a RUN if any stage of a pipe fails (e.g. `curl ... | sh` when the curl
+# half dies mid-download), instead of silently trusting the last command.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ---- 1. OS deps -------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates git jq tini \
+        libcurl4-openssl-dev python3-pip python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- 2. Unsloth Studio + Core (one-line installer, non-interactive) ---------
+# Piping via `sh` makes stdin non-TTY so the "start Studio now?" prompt defaults
+# to no. Installs into venv ~/.unsloth/studio/unsloth_studio (Python 3.13).
+RUN echo 'n' | curl -fsSL https://unsloth.ai/install.sh | sh
+
+# ---- 3. Force the ROCm PyTorch stack ----------------------------------------
+# The installer lands torch+cpu on a GPU-less build host -> the GPU would be
+# dead on MI300X. cp313 rocm7.2 wheels. Must pin the +rocm7.2 local tag AND
+# --force-reinstall or pip treats the installed +cpu build as satisfying a bare
+# version and skips the swap. VERSION PAIRING IS STRICT: torchvision 0.26 <->
+# torch 2.11 (0.28 is built against torch 2.13 and fails with "operator
+# torchvision::nms does not exist").
+RUN VENV=/root/.unsloth/studio/unsloth_studio; \
+    "$VENV/bin/python" -m pip install --no-cache-dir --force-reinstall --no-deps \
+        --index-url https://download.pytorch.org/whl/rocm7.2 \
+        torch==2.11.0+rocm7.2 torchvision==0.26.0+rocm7.2 torchaudio==2.11.0+rocm7.2 \
+    && "$VENV/bin/python" -c "import torch, torchvision, torchaudio; from torchvision.ops import nms; print('torch',torch.__version__,'tv',torchvision.__version__,'hip',torch.version.hip,'nms OK')"
+
+# ---- 4. ROCm bitsandbytes pre-release (QLoRA needs it; <=0.49.2 has a 4-bit
+#         NaN bug on every AMD GPU). Installed via pip (uv rejects the filename).
+RUN VENV=/root/.unsloth/studio/unsloth_studio; \
+    "$VENV/bin/python" -m pip install --no-cache-dir --force-reinstall --no-deps \
+        "https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-manylinux_2_24_x86_64.whl" \
+    || echo "WARN: ROCm bitsandbytes pre-release install failed (QLoRA 4-bit may NaN); continuing"
+
+# ---- 4b. Pin-upgrade Unsloth to 2026.7.4 + install hf_xet -------------------
+# The unsloth.ai installer (step 2) is UNPINNED. Pin both unsloth + unsloth_zoo
+# to 2026.7.4 in lockstep (matched-pair release). --no-deps upgrades ONLY these
+# two and cannot pull a different torch/torchvision, protecting the strict ROCm
+# 2.11.0+rocm7.2 <-> torchvision 0.26 ABI pairing from step 3. Also install
+# hf_xet so Xet-backed HF repos use the native Xet client instead of hf_transfer
+# (which 403s against the anonymous Xet CDN). Paired with the
+# HF_HUB_DISABLE_XET=0 / HF_HUB_ENABLE_HF_TRANSFER=0 env in step 7.
+RUN VENV=/root/.unsloth/studio/unsloth_studio; \
+    "$VENV/bin/python" -m pip install --no-cache-dir hf_xet \
+    && "$VENV/bin/python" -m pip install --no-cache-dir --no-deps --upgrade \
+        "unsloth==2026.7.4" "unsloth_zoo==2026.7.4" \
+    && "$VENV/bin/python" -c "import importlib.metadata as m, torch, hf_xet; \
+print('unsloth', m.version('unsloth'), 'unsloth_zoo', m.version('unsloth_zoo'), 'torch', torch.__version__, 'hip', torch.version.hip); \
+assert m.version('unsloth')=='2026.7.4' and m.version('unsloth_zoo')=='2026.7.4', 'unsloth not upgraded'; \
+assert torch.version.hip, 'ROCm torch lost its HIP build'; \
+print('base unsloth 2026.7.4 + hf_xet verified, ROCm torch intact')"
+
+# ---- 5. JupyterLab ----------------------------------------------------------
+RUN pip3 install --no-cache-dir --break-system-packages jupyterlab
+
+# ---- 6. Cloudflare IPv4 tunnel fix (two layers) -----------------------------
+# Layer 1: env-var form of --edge-ip-version 4, inherited by the cloudflared
+#          child Studio spawns.
+ENV TUNNEL_EDGE_IP_VERSION=4
+# Layer 2: pre-install the REAL cloudflared as cloudflared.real + a shim on PATH.
+#          Studio does NOT ship cloudflared (downloads it lazily at first run),
+#          so we install our own; Studio then uses OURS and always gets IPv4.
+RUN set -eux; \
+    curl -fsSL -o /usr/local/bin/cloudflared.real \
+        https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64; \
+    chmod 0755 /usr/local/bin/cloudflared.real; \
+    /usr/local/bin/cloudflared.real --version
+COPY cloudflared-shim.sh /usr/local/bin/cloudflared
+RUN chmod 0755 /usr/local/bin/cloudflared && command -v cloudflared
+
+# ---- 7. Point model + dataset DEFAULT dirs at the persistent /workspace ------
+# Studio resolves model/dataset locations purely from these env vars at startup.
+# STUDIO_PORT=8890 because the platform's jupyter-lab already owns 8888.
+ENV HF_HOME=/workspace/.hf \
+    HF_HUB_CACHE=/workspace/hf_cache \
+    HF_DATASETS_CACHE=/workspace/.hf/datasets \
+    HF_HUB_DISABLE_XET=0 \
+    HF_HUB_ENABLE_HF_TRANSFER=0 \
+    HSA_OVERRIDE_GFX_VERSION=9.4.2 \
+    STUDIO_PORT=8890 \
+    JUPYTER_PORT=8888 \
+    TUNNELS_JSON=/run/aai/tunnels.json
+
+# ---- 8. Auto-start plumbing -------------------------------------------------
+# studio_autostart.sh    : launches Studio on :$STUDIO_PORT with a Cloudflare
+#                          tunnel and records the public URL in $TUNNELS_JSON
+#                          (under /run/aai, OUTSIDE /workspace, so a session
+#                          reset that wipes /workspace never deletes it).
+# jupyter_server_config.py: the hook that fires studio_autostart.sh whenever
+#                          jupyter-lab starts (survives the platform's command
+#                          override; see the header note).
+# entrypoint.sh          : standalone `docker run` path (bypassed on the
+#                          platform, kept for local use).
+# prefetch_workspace.sh  : idempotent model/dataset prefetch onto /workspace.
+COPY studio_autostart.sh      /usr/local/bin/studio_autostart.sh
+COPY prefetch_workspace.sh    /usr/local/bin/prefetch_workspace.sh
+COPY entrypoint.sh            /usr/local/bin/entrypoint.sh
+COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
+RUN chmod 0755 /usr/local/bin/studio_autostart.sh \
+        /usr/local/bin/prefetch_workspace.sh \
+        /usr/local/bin/entrypoint.sh
+
+WORKDIR /workspace
+
+# On the AMD Dev Cloud the platform overrides this with its own jupyter-lab
+# command; the Studio auto-start still fires via the Jupyter config hook above.
+# For a standalone `docker run` the entrypoint brings up Studio directly.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["studio"]
