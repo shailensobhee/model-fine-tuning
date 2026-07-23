@@ -79,23 +79,64 @@ RUN VENV=/root/.unsloth/studio/unsloth_studio; \
         "https://github.com/bitsandbytes-foundation/bitsandbytes/releases/download/continuous-release_main/bitsandbytes-1.33.7.preview-py3-none-manylinux_2_24_x86_64.whl" \
     || echo "WARN: ROCm bitsandbytes pre-release install failed (QLoRA 4-bit may NaN); continuing"
 
-# ---- 4b. Pin-upgrade Unsloth to 2026.7.4 + install hf_xet -------------------
-# The unsloth.ai installer (step 2) is UNPINNED. Pin both unsloth + unsloth_zoo
-# to 2026.7.4 in lockstep (matched-pair release). --no-deps upgrades ONLY these
-# two and cannot pull a different torch/torchvision, protecting the strict ROCm
-# 2.11.0+rocm7.2 <-> torchvision 0.26 ABI pairing from step 3. Also install
-# hf_xet so Xet-backed HF repos use the native Xet client instead of hf_transfer
-# (which 403s against the anonymous Xet CDN). Paired with the
-# HF_HUB_DISABLE_XET=0 / HF_HUB_ENABLE_HF_TRANSFER=0 env in step 7.
+# ---- 4b. Pin-upgrade Unsloth to 2026.7.5 + install hf_xet -------------------
+# The unsloth.ai installer (step 2) is UNPINNED. Pin unsloth 2026.7.5 with its
+# matched unsloth_zoo 2026.7.6 (unsloth 2026.7.5 requires unsloth_zoo>=2026.7.6;
+# they are released as a matched pair). --no-deps upgrades ONLY these two and
+# cannot pull a different torch/torchvision, protecting the strict ROCm
+# 2.11.0+rocm7.2 <-> torchvision 0.26 ABI pairing from step 3 (both accept
+# torch>=2.4.0,<2.13.0, so torch 2.11 stays valid). Also install hf_xet so
+# Xet-backed HF repos use the native Xet client instead of hf_transfer (which
+# 403s against the anonymous Xet CDN). Paired with the HF_HUB_DISABLE_XET=0 /
+# HF_HUB_ENABLE_HF_TRANSFER=0 env in step 7.
 RUN VENV=/root/.unsloth/studio/unsloth_studio; \
     "$VENV/bin/python" -m pip install --no-cache-dir hf_xet \
     && "$VENV/bin/python" -m pip install --no-cache-dir --no-deps --upgrade \
-        "unsloth==2026.7.4" "unsloth_zoo==2026.7.4" \
+        "unsloth==2026.7.5" "unsloth_zoo==2026.7.6" \
     && "$VENV/bin/python" -c "import importlib.metadata as m, torch, hf_xet; \
 print('unsloth', m.version('unsloth'), 'unsloth_zoo', m.version('unsloth_zoo'), 'torch', torch.__version__, 'hip', torch.version.hip); \
-assert m.version('unsloth')=='2026.7.4' and m.version('unsloth_zoo')=='2026.7.4', 'unsloth not upgraded'; \
+assert m.version('unsloth')=='2026.7.5' and m.version('unsloth_zoo')=='2026.7.6', 'unsloth not upgraded'; \
 assert torch.version.hip, 'ROCm torch lost its HIP build'; \
-print('base unsloth 2026.7.4 + hf_xet verified, ROCm torch intact')"
+print('base unsloth 2026.7.5 + hf_xet verified, ROCm torch intact')"
+
+# ---- 4c. Bump transformers + trl so the next-gen archs actually load AND train
+# The unsloth.ai installer + the 2026.7.5 pin (steps 2/4b) leave transformers at
+# 4.57.6, which does NOT know the `qwen3_5` / `gemma4` model architectures. Every
+# next-gen model we prefetch (unsloth/Qwen3.5-2B, Qwen3.5-9B, gemma-4-E2B-it,
+# gemma-4-E4B-it) then dies at load with a hard
+#     "The checkpoint you are trying to load ... does not support Qwen3.5.
+#      minimum required transformers 5.2.0"
+# so the whole predownloaded model set was DEAD on this image. Fix (verified
+# end-to-end on an MI300X, 2026-07-22): transformers 5.5.0 + trl 0.24.0.
+#
+# WHY THESE EXACT VERSIONS (all inside what unsloth 2026.7.4 declares it accepts):
+#   * transformers==5.5.0  -> unsloth allows `!=5.0.0,!=5.1.0,<=5.5.0,>=4.51.3`;
+#     5.5.0 is the HIGHEST allowed AND >=5.2.0, so qwen3_5/gemma4 register.
+#   * trl==0.24.0          -> unsloth caps trl at `<=0.24.0`. Bumping transformers
+#     to 5.x ALONE is not enough: the shipped trl 0.23.1 SFT collator crashes at
+#     the first training step on transformers 5.x with `KeyError: 'images'`
+#     (a model that loads but cannot train = a dead feature). 0.24.0 fixes it.
+#
+# WHY --no-deps IS MANDATORY (learned the hard way):
+#   A plain `pip install trl==0.24.0` resolves its own dependency tree and pulls
+#   `torch==2.13.0` + the full nvidia-cu13 CUDA wheel stack, OBLITERATING the
+#   ROCm torch 2.11.0+rocm7.2 from step 3 (torch.version.hip -> None, GPU dead).
+#   --no-deps installs ONLY these two packages; huggingface_hub (a hard runtime
+#   dep of transformers 5.x) is upgraded explicitly and pinned <2 to stay ABI-safe.
+# The trailing assert re-proves the ROCm torch survived and the archs register.
+RUN VENV=/root/.unsloth/studio/unsloth_studio; \
+    "$VENV/bin/python" -m pip install --no-cache-dir --no-deps --upgrade \
+        "transformers==5.5.0" "trl==0.24.0" "huggingface_hub>=1.0,<2" \
+    && "$VENV/bin/python" -c "import importlib.metadata as m, torch; \
+import transformers, trl; \
+print('transformers', transformers.__version__, 'trl', trl.__version__, \
+'torch', torch.__version__, 'hip', torch.version.hip); \
+assert transformers.__version__=='5.5.0', 'transformers not pinned to 5.5.0'; \
+assert m.version('trl')=='0.24.0', 'trl not pinned to 0.24.0'; \
+assert torch.version.hip, 'ROCm torch clobbered by a transitive CUDA torch'; \
+from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES as C; \
+assert 'qwen3_5' in C and 'gemma4' in C, 'next-gen archs still not registered'; \
+print('transformers 5.5.0 + trl 0.24.0 pinned; qwen3_5/gemma4 archs registered; ROCm torch intact')"
 
 # ---- 5. JupyterLab ----------------------------------------------------------
 RUN pip3 install --no-cache-dir --break-system-packages jupyterlab
